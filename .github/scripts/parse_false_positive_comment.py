@@ -29,16 +29,35 @@ def is_issue_state(issue, state="open"):
 
 
 def get_failed_builds_for_patch_by_user(change, user, patch_set):
-    user_msgs = []
-    for msg in change["messages"]:
-        if msg["author"]["username"] == user and msg["_revision_number"] == patch_set:
-            user_msgs.append(msg["message"])
+    # Group comments into respective patchsets, pick the latest "Build failed" comment from
+    # the latest patchset it was recorded at and check if that patchset is older or the
+    # same as patch_set.
 
-    return [
-        line
-        for line in "\n".join(user_msgs).splitlines()
-        if "Build failed. Results: " in line
-    ]
+    pattern = "Build failed. Results: "
+    comments_per_patchset = {}
+
+    for msg in change["messages"]:
+        if msg["author"]["username"] != user:
+            continue
+        if msg["_revision_number"] not in comments_per_patchset:
+            comments_per_patchset[msg["_revision_number"]] = []
+        comments_per_patchset[msg["_revision_number"]].append(msg["message"])
+
+    latest_build_failed_patchset = -1
+    for p in sorted(comments_per_patchset.keys()):
+        if pattern in "\n".join(comments_per_patchset[p]):
+            latest_build_failed_patchset = p
+
+    if latest_build_failed_patchset == -1:
+        return []
+
+    failed_builds = []
+    for comment in comments_per_patchset[latest_build_failed_patchset]:
+        for line in comment.splitlines():
+            if pattern in line:
+                failed_builds.append(line)
+
+    return failed_builds
 
 
 def get_url_details_from_failed_build(build):
